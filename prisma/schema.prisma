@@ -1,0 +1,194 @@
+// Prisma Schema — Clube Fidelidade
+// Gerador: prisma-client v7+
+// Banco: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────
+// Auth (next-auth v5 + @auth/prisma-adapter)
+// ─────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  role          UserRole  @default(CLIENT)
+  phone         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // next-auth relations
+  accounts      Account[]
+  sessions      Session[]
+
+  // domínio
+  subscriptions Subscription[]
+  appointments  Appointment[]  @relation("ClientAppointments")
+  managedAppointments Appointment[] @relation("ProfessionalAppointments")
+  posts         Post[]
+  plans         Plan[]
+
+  @@map("users")
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─────────────────────────────────────────
+// Domínio — Planos e Assinaturas
+// ─────────────────────────────────────────
+
+model Plan {
+  id              String      @id @default(cuid())
+  professionalId  String
+  name            String
+  description     String?
+  priceInCents    Int
+  appointmentsPerMonth Int
+  durationDays    Int         @default(30)
+  isActive        Boolean     @default(true)
+  mpPreapprovalPlanId String? // ID do plano no Mercado Pago
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  professional    User         @relation(fields: [professionalId], references: [id])
+  subscriptions   Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id              String             @id @default(cuid())
+  clientId        String
+  planId          String
+  status          SubscriptionStatus @default(PENDING)
+  startDate       DateTime?
+  endDate         DateTime?
+  nextBillingDate DateTime?
+  mpSubscriptionId String?           // ID da assinatura no Mercado Pago
+  mpPayerId        String?
+  appointmentsUsed Int               @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  client          User         @relation(fields: [clientId], references: [id])
+  plan            Plan         @relation(fields: [planId], references: [id])
+  appointments    Appointment[]
+
+  @@map("subscriptions")
+}
+
+// ─────────────────────────────────────────
+// Domínio — Agendamentos
+// ─────────────────────────────────────────
+
+model Appointment {
+  id              String            @id @default(cuid())
+  clientId        String
+  professionalId  String
+  subscriptionId  String?
+  scheduledAt     DateTime
+  durationMinutes Int               @default(60)
+  status          AppointmentStatus @default(PENDING)
+  serviceType     String?
+  notes           String?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  client          User         @relation("ClientAppointments", fields: [clientId], references: [id])
+  professional    User         @relation("ProfessionalAppointments", fields: [professionalId], references: [id])
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@map("appointments")
+}
+
+// ─────────────────────────────────────────
+// Domínio — Feed de Dicas
+// ─────────────────────────────────────────
+
+model Post {
+  id              String    @id @default(cuid())
+  professionalId  String
+  title           String
+  content         String
+  imageUrl        String?
+  publishedAt     DateTime?
+  isPublished     Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  professional    User      @relation(fields: [professionalId], references: [id])
+
+  @@map("posts")
+}
+
+// ─────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────
+
+enum UserRole {
+  PROFESSIONAL
+  CLIENT
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAUSED
+  CANCELLED
+  EXPIRED
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
