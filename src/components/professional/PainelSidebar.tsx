@@ -12,17 +12,21 @@ import {
   FileText,
   LogOut,
   Menu,
+  Scissors,
+  Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { theme } from "@/lib/theme"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
 const navItems = [
-  { href: "/painel",          label: "Dashboard",  icon: LayoutDashboard },
-  { href: "/painel/agenda",   label: "Agenda",     icon: CalendarDays },
-  { href: "/painel/clientes", label: "Clientes",   icon: Users },
-  { href: "/painel/planos",   label: "Planos",     icon: CreditCard },
-  { href: "/painel/posts",    label: "Dicas",      icon: FileText },
+  { href: "/painel",           label: "Dashboard",  icon: LayoutDashboard },
+  { href: "/painel/agenda",    label: "Agenda",     icon: CalendarDays },
+  { href: "/painel/clientes",  label: "Clientes",   icon: Users },
+  { href: "/painel/planos",    label: "Planos",     icon: CreditCard },
+  { href: "/painel/servicos",  label: "Serviços",   icon: Scissors },
+  { href: "/painel/horarios",  label: "Horários",   icon: Clock },
+  { href: "/painel/posts",     label: "Dicas",      icon: FileText },
 ]
 
 function NavContent({ onClose }: { onClose?: () => void }) {
