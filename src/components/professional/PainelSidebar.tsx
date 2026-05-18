@@ -14,6 +14,7 @@ import {
   Menu,
   Scissors,
   Clock,
+  ShoppingBag,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { theme } from "@/lib/theme"
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/painel/planos",    label: "Planos",     icon: CreditCard },
   { href: "/painel/servicos",  label: "Serviços",   icon: Scissors },
   { href: "/painel/horarios",  label: "Horários",   icon: Clock },
+  { href: "/painel/catalogo",  label: "Catálogo",   icon: ShoppingBag },
   { href: "/painel/posts",     label: "Dicas",      icon: FileText },
 ]
 

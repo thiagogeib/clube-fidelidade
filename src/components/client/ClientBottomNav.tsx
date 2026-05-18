@@ -2,14 +2,15 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Calendar, CreditCard, BookOpen } from "lucide-react"
+import { Home, Calendar, CreditCard, BookOpen, ShoppingBag } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
-  { href: "/area",        label: "Início",   icon: Home },
-  { href: "/area/agendar", label: "Agendar",  icon: Calendar },
+  { href: "/area",           label: "Início",    icon: Home },
+  { href: "/area/agendar",   label: "Agendar",   icon: Calendar },
   { href: "/area/meu-plano", label: "Meu Plano", icon: CreditCard },
-  { href: "/area/dicas",  label: "Dicas",    icon: BookOpen },
+  { href: "/area/catalogo",  label: "Catálogo",  icon: ShoppingBag },
+  { href: "/area/dicas",     label: "Dicas",     icon: BookOpen },
 ]
 
 export function ClientBottomNav() {
