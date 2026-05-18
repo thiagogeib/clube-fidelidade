@@ -12,6 +12,7 @@ export const createAppointmentSchema = z.object({
     .pipe(z.string().datetime("Data/hora inválida")),
   durationMinutes: z.number().int().min(15).max(480).default(60),
   serviceType:     z.string().optional(),
+  serviceId:       z.string().optional().nullable(),
   notes:           z.string().optional(),
 })
 

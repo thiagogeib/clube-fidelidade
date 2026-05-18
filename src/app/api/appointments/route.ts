@@ -2,11 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { createAppointmentSchema } from "@/lib/validations/appointments"
-
-// GET /api/appointments
-// CLIENT: lista seus próprios agendamentos.
-// PROFESSIONAL: lista todos os agendamentos da sua agenda.
-// Query params: status, from (ISO date), to (ISO date), page, pageSize
+import { sendAppointmentCreated } from "@/lib/email"
 
 export async function GET(req: Request) {
   const session = await auth()
@@ -27,14 +23,7 @@ export async function GET(req: Request) {
       ? { clientId: session.user.id }
       : { professionalId: session.user.id }),
     ...(status ? { status: status as never } : {}),
-    ...(from || to
-      ? {
-          scheduledAt: {
-            ...(from ? { gte: from } : {}),
-            ...(to   ? { lte: to   } : {}),
-          },
-        }
-      : {}),
+    ...(from || to ? { scheduledAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
   }
 
   const [appointments, total] = await Promise.all([
@@ -42,6 +31,7 @@ export async function GET(req: Request) {
       where,
       include: {
         client: { select: { id: true, name: true, email: true, image: true, phone: true } },
+        service: { select: { id: true, name: true } },
       },
       orderBy: { scheduledAt: "asc" },
       skip,
@@ -55,9 +45,6 @@ export async function GET(req: Request) {
     pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
   })
 }
-
-// POST /api/appointments
-// CLIENT: cria um agendamento consumindo cota da assinatura ativa.
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -78,36 +65,28 @@ export async function POST(req: Request) {
     )
   }
 
-  // Verificar assinatura ativa
   const subscription = await db.subscription.findFirst({
     where:   { clientId: session.user.id, status: "ACTIVE" },
     include: { plan: true },
   })
 
   if (!subscription) {
-    return NextResponse.json(
-      { error: "Forbidden", message: "Você não possui uma assinatura ativa" },
-      { status: 403 },
-    )
+    return NextResponse.json({ error: "Forbidden", message: "Você não possui uma assinatura ativa" }, { status: 403 })
   }
 
-  // Verificar cota mensal
   if (subscription.appointmentsUsed >= subscription.plan.appointmentsPerMonth) {
-    return NextResponse.json(
-      { error: "Forbidden", message: "Cota de agendamentos do mês esgotada" },
-      { status: 403 },
-    )
+    return NextResponse.json({ error: "Forbidden", message: "Cota de agendamentos do mês esgotada" }, { status: 403 })
   }
 
-  const { scheduledAt, durationMinutes, serviceType, notes } = parsed.data
+  const { scheduledAt, durationMinutes, serviceType, serviceId, notes } = parsed.data
 
-  // Transação: cria agendamento e incrementa counter na assinatura
   const appointment = await db.$transaction(async (tx) => {
     const appt = await tx.appointment.create({
       data: {
         clientId:       session.user.id,
         professionalId: subscription.plan.professionalId,
         subscriptionId: subscription.id,
+        serviceId:      serviceId ?? null,
         scheduledAt:    new Date(scheduledAt),
         durationMinutes,
         serviceType,
@@ -115,14 +94,24 @@ export async function POST(req: Request) {
         status: "PENDING",
       },
     })
-
     await tx.subscription.update({
       where: { id: subscription.id },
       data:  { appointmentsUsed: { increment: 1 } },
     })
-
     return appt
   })
+
+  // Email assíncrono — não bloqueia a resposta
+  const client = await db.user.findUnique({ where: { id: session.user.id }, select: { name: true, email: true } })
+  if (client?.email) {
+    sendAppointmentCreated({
+      to:             client.email,
+      clientName:     client.name ?? "Cliente",
+      scheduledAt:    new Date(scheduledAt),
+      serviceType:    serviceType ?? null,
+      durationMinutes,
+    })
+  }
 
   return NextResponse.json({ data: appointment }, { status: 201 })
 }

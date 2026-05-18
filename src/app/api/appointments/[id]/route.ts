@@ -2,8 +2,8 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { updateAppointmentSchema, cancelAppointmentSchema } from "@/lib/validations/appointments"
+import { sendAppointmentConfirmed, sendAppointmentCancelled } from "@/lib/email"
 
-// GET /api/appointments/:id
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -16,17 +16,17 @@ export async function GET(
   const { id } = await params
   const appointment = await db.appointment.findUnique({
     where:   { id },
-    include: { client: { select: { id: true, name: true, email: true, image: true, phone: true } } },
+    include: {
+      client:  { select: { id: true, name: true, email: true, image: true, phone: true } },
+      service: { select: { id: true, name: true } },
+    },
   })
 
   if (!appointment) {
     return NextResponse.json({ error: "NotFound", message: "Agendamento não encontrado" }, { status: 404 })
   }
 
-  const canAccess =
-    appointment.clientId       === session.user.id ||
-    appointment.professionalId === session.user.id
-
+  const canAccess = appointment.clientId === session.user.id || appointment.professionalId === session.user.id
   if (!canAccess) {
     return NextResponse.json({ error: "Forbidden", message: "Acesso negado" }, { status: 403 })
   }
@@ -34,9 +34,6 @@ export async function GET(
   return NextResponse.json({ data: appointment })
 }
 
-// PATCH /api/appointments/:id
-// Profissional: pode confirmar, completar, marcar no_show.
-// Cliente: pode apenas cancelar (via campo status = CANCELLED) até X horas antes.
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -47,16 +44,16 @@ export async function PATCH(
   }
 
   const { id } = await params
-  const appointment = await db.appointment.findUnique({ where: { id } })
+  const appointment = await db.appointment.findUnique({
+    where:   { id },
+    include: { client: { select: { name: true, email: true } } },
+  })
 
   if (!appointment) {
     return NextResponse.json({ error: "NotFound", message: "Agendamento não encontrado" }, { status: 404 })
   }
 
-  const canAccess =
-    appointment.clientId       === session.user.id ||
-    appointment.professionalId === session.user.id
-
+  const canAccess = appointment.clientId === session.user.id || appointment.professionalId === session.user.id
   if (!canAccess) {
     return NextResponse.json({ error: "Forbidden", message: "Acesso negado" }, { status: 403 })
   }
@@ -81,11 +78,33 @@ export async function PATCH(
   }
 
   const updated = await db.appointment.update({ where: { id }, data })
+
+  // Emails assíncronos
+  const clientEmail = appointment.client?.email
+  const clientName  = appointment.client?.name ?? "Cliente"
+  if (clientEmail && status && status !== appointment.status) {
+    if (status === "CONFIRMED") {
+      sendAppointmentConfirmed({
+        to:          clientEmail,
+        clientName,
+        scheduledAt: appointment.scheduledAt,
+        serviceType: appointment.serviceType,
+      })
+    } else if (status === "CANCELLED") {
+      sendAppointmentCancelled({
+        to:          clientEmail,
+        clientName,
+        scheduledAt: appointment.scheduledAt,
+        serviceType: appointment.serviceType,
+        cancelReason: cancelReason ?? null,
+        cancelledBy: session.user.role === "PROFESSIONAL" ? "professional" : "client",
+      })
+    }
+  }
+
   return NextResponse.json({ data: updated })
 }
 
-// DELETE /api/appointments/:id
-// Alias para cancelamento — equivale a PATCH com status=CANCELLED.
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -96,16 +115,16 @@ export async function DELETE(
   }
 
   const { id } = await params
-  const appointment = await db.appointment.findUnique({ where: { id } })
+  const appointment = await db.appointment.findUnique({
+    where:   { id },
+    include: { client: { select: { name: true, email: true } } },
+  })
 
   if (!appointment) {
     return NextResponse.json({ error: "NotFound", message: "Agendamento não encontrado" }, { status: 404 })
   }
 
-  const canAccess =
-    appointment.clientId       === session.user.id ||
-    appointment.professionalId === session.user.id
-
+  const canAccess = appointment.clientId === session.user.id || appointment.professionalId === session.user.id
   if (!canAccess) {
     return NextResponse.json({ error: "Forbidden", message: "Acesso negado" }, { status: 403 })
   }
@@ -121,6 +140,18 @@ export async function DELETE(
       cancelReason: parsed.success ? parsed.data.cancelReason : null,
     },
   })
+
+  // Email assíncrono
+  if (appointment.client?.email) {
+    sendAppointmentCancelled({
+      to:          appointment.client.email,
+      clientName:  appointment.client.name ?? "Cliente",
+      scheduledAt: appointment.scheduledAt,
+      serviceType: appointment.serviceType,
+      cancelReason: parsed.success ? parsed.data.cancelReason : null,
+      cancelledBy: session.user.role === "PROFESSIONAL" ? "professional" : "client",
+    })
+  }
 
   return NextResponse.json({ data: updated })
 }

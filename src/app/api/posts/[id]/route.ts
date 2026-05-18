@@ -2,8 +2,8 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { updatePostSchema } from "@/lib/validations/posts"
+import { sendNewPost } from "@/lib/email"
 
-// GET /api/posts/:id
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -18,8 +18,6 @@ export async function GET(
   return NextResponse.json({ data: post })
 }
 
-// PATCH /api/posts/:id
-// Apenas o profissional autor.
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -50,18 +48,40 @@ export async function PATCH(
     )
   }
 
-  const data = {
-    ...parsed.data,
-    // Se publicando pela primeira vez, registra a data
-    ...(parsed.data.isPublished && !post.isPublished ? { publishedAt: new Date() } : {}),
+  const isPublishingNow = parsed.data.isPublished && !post.isPublished
+
+  const updated = await db.post.update({
+    where: { id },
+    data: {
+      ...parsed.data,
+      ...(isPublishingNow ? { publishedAt: new Date() } : {}),
+    },
+  })
+
+  // Notifica todos os clientes ativos ao publicar pela primeira vez
+  if (isPublishingNow) {
+    const activeClients = await db.subscription.findMany({
+      where: {
+        status: "ACTIVE",
+        plan: { professionalId: session.user.id },
+      },
+      include: { client: { select: { name: true, email: true } } },
+    })
+    for (const sub of activeClients) {
+      if (sub.client?.email) {
+        sendNewPost({
+          to:         sub.client.email,
+          clientName: sub.client.name ?? "Cliente",
+          postTitle:  updated.title,
+          postId:     updated.id,
+        })
+      }
+    }
   }
 
-  const updated = await db.post.update({ where: { id }, data })
   return NextResponse.json({ data: updated })
 }
 
-// DELETE /api/posts/:id
-// Soft delete não aplicável a posts — hard delete permitido só ao autor.
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
